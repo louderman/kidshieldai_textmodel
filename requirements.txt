@@ -1,0 +1,9 @@
+datasets>=2.19.0
+evaluate>=0.4.2
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.4.0
+torch>=2.2.0
+transformers>=4.39.0
+accelerate>=0.28.0
+sentencepiece>=0.1.99

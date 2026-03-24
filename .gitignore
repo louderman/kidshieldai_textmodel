@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+.venv311/
+
+# Local model and dataset caches
+.cache/
+
+# Data artifacts
+data/raw/
+data/processed/
+
+# Training outputs
+outputs/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temp files
+*.log
+*.tmp
