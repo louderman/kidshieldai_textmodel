@@ -5,10 +5,12 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 from pathlib import Path
 
 import evaluate
 import numpy as np
+import torch
 from datasets import load_dataset
 from transformers import (
     AutoModelForSequenceClassification,
@@ -47,10 +49,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--fp16", action="store_true")
     parser.add_argument("--gradient-checkpointing", action="store_true")
+    parser.add_argument("--class-weighting", action="store_true")
     parser.add_argument("--max-train-samples", type=int, default=None)
     parser.add_argument("--max-validation-samples", type=int, default=None)
     parser.add_argument("--max-test-samples", type=int, default=None)
     return parser.parse_args()
+
+
+class WeightedTrainer(Trainer):
+    def __init__(self, *args, class_weights: torch.Tensor | None = None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.get("logits")
+        weight = self.class_weights.to(logits.device) if self.class_weights is not None else None
+        loss_fct = torch.nn.CrossEntropyLoss(weight=weight)
+        loss = loss_fct(logits.view(-1, model.config.num_labels), labels.view(-1))
+        return (loss, outputs) if return_outputs else loss
 
 
 def main() -> None:
@@ -72,6 +90,15 @@ def main() -> None:
         dataset["validation"] = dataset["validation"].select(range(min(args.max_validation_samples, len(dataset["validation"]))))
     if args.max_test_samples is not None:
         dataset["test"] = dataset["test"].select(range(min(args.max_test_samples, len(dataset["test"]))))
+
+    class_weights = None
+    if args.class_weighting:
+        label_counts = Counter(dataset["train"]["label"])
+        total = sum(label_counts.values())
+        class_weights = torch.tensor(
+            [total / (2 * label_counts.get(label, 1)) for label in range(2)],
+            dtype=torch.float32,
+        )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name, use_fast=False, cache_dir=str(HF_HOME / "transformers"))
 
@@ -125,14 +152,14 @@ def main() -> None:
         metric_for_best_model="f1",
         report_to="none",
         dataloader_num_workers=0,
-        use_cpu=not __import__("torch").cuda.is_available(),
+        use_cpu=not torch.cuda.is_available(),
         logging_nan_inf_filter=False,
         fp16=args.fp16,
         gradient_checkpointing=args.gradient_checkpointing,
         dataloader_pin_memory=True,
     )
 
-    trainer = Trainer(
+    trainer = WeightedTrainer(
         model=model,
         args=training_args,
         train_dataset=tokenized["train"],
@@ -140,6 +167,7 @@ def main() -> None:
         processing_class=tokenizer,
         data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
         compute_metrics=compute_metrics,
+        class_weights=class_weights,
     )
 
     trainer.train()

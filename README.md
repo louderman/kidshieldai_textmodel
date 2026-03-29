@@ -196,6 +196,133 @@ This uses:
 
 That combination is much more practical on a 7.5-8 GB GPU than a naive batch size of `8`.
 
+### Larger Smoke Test
+
+This is the first smoke configuration that produced a useful non-zero F1 signal:
+
+```bash
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True .venv311/bin/python scripts/train.py \
+  --data-dir data/processed \
+  --output-dir outputs/mdeberta-kidshield-smoke-large \
+  --model-name microsoft/mdeberta-v3-base \
+  --epochs 1 \
+  --batch-size 1 \
+  --gradient-accumulation-steps 8 \
+  --lr 5e-6 \
+  --fp16 \
+  --gradient-checkpointing \
+  --optim adamw_torch \
+  --class-weighting \
+  --max-train-samples 4096 \
+  --max-validation-samples 512 \
+  --max-test-samples 512
+```
+
+This took about 6 minutes locally and produced a non-zero eval F1, which made it a useful go/no-go check before full training.
+
+## Cloud Training
+
+If local training is too slow, use a cloud GPU. A 24 GB or 48 GB card is much more practical than an 8 GB desktop GPU for `mdeberta-v3-base`.
+
+Suggested workflow:
+
+1. Push this repository to GitHub.
+2. Launch a cloud GPU instance.
+3. Clone the repo on the remote machine.
+4. Run the setup script.
+5. Upload or download the datasets.
+6. Preprocess if needed.
+7. Run training.
+
+Recommended providers:
+
+- Lambda GPU Cloud
+- Runpod
+
+On a cloud box with more VRAM, you can usually relax memory-saving settings and train faster.
+
+### Cloud Setup
+
+After SSHing into the instance:
+
+```bash
+git clone <your-repo-url>
+cd "Kidshield AI"
+bash scripts/setup_cloud.sh
+```
+
+If the remote machine uses a different Python binary:
+
+```bash
+PYTHON_BIN=python3.12 bash scripts/setup_cloud.sh
+```
+
+### Getting Data Onto The Cloud Box
+
+Options:
+
+- copy `data/raw/` or `data/processed/` from your local machine with `rsync` or `scp`
+- redownload the public datasets on the remote box
+- manually upload the Kaggle multilingual `validation.csv`
+
+If you already have processed files locally, copying `data/processed/` is usually the fastest path.
+
+Example from your local machine:
+
+```bash
+rsync -avz data/processed/ <user>@<host>:"/path/to/Kidshield AI/data/processed/"
+```
+
+If you want to copy raw data too:
+
+```bash
+rsync -avz data/raw/ <user>@<host>:"/path/to/Kidshield AI/data/raw/"
+```
+
+### Cloud Training Command
+
+Use the helper script:
+
+```bash
+bash scripts/train_cloud.sh
+```
+
+Defaults in `scripts/train_cloud.sh`:
+
+- model: `microsoft/mdeberta-v3-base`
+- epochs: `3`
+- batch size: `4`
+- grad accumulation: `1`
+- lr: `1e-5`
+- `fp16`
+- class weighting enabled
+
+Override values with env vars:
+
+```bash
+OUTPUT_DIR=outputs/mdeberta-kidshield-a10 \
+BATCH_SIZE=8 \
+GRAD_ACCUM=1 \
+EPOCHS=3 \
+LR=1e-5 \
+bash scripts/train_cloud.sh
+```
+
+If you want to bypass the helper:
+
+```bash
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True .venv311/bin/python scripts/train.py \
+  --data-dir data/processed \
+  --output-dir outputs/mdeberta-kidshield-cloud \
+  --model-name microsoft/mdeberta-v3-base \
+  --epochs 3 \
+  --batch-size 4 \
+  --lr 1e-5 \
+  --fp16 \
+  --optim adamw_torch \
+  --class-weighting
+```
+
 ## Known Warnings
 
 These are expected:
@@ -217,5 +344,5 @@ If those appear in a smoke run, stop and debug before launching full training.
 ## Current Caveats
 
 - The pipeline trains a single binary classifier, not separate heads for toxicity subtype prediction.
-- The current trainer does not yet apply class-weighted loss, so full training can still bias toward the negative class. If metrics collapse to all-negative predictions, add weighted cross-entropy next.
+- The trainer now supports `--class-weighting`, which improved larger smoke-test behavior, but recall is still likely to need tuning.
 - URL/domain classification would likely benefit from a character-aware or byte-level model, but this setup keeps one shared text encoder for operational simplicity.
