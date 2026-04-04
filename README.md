@@ -196,6 +196,211 @@ This uses:
 
 That combination is much more practical on a 7.5-8 GB GPU than a naive batch size of `8`.
 
+## Inference API
+
+A FastAPI backend is included for serving model predictions from a trained checkpoint.
+
+**Working directory:** run every command in this section from the **repository root** (`kidshieldai_textmodel/`), the same folder that contains `requirements.txt` and `scripts/`. If you run `pip install` or `python scripts/serve_api.py` from the parent `Project_Work` folder, paths will not resolve.
+
+### Install API Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Run the Server
+
+```bash
+python scripts/serve_api.py
+```
+
+By default the server runs at:
+
+- `http://localhost:8000`
+
+### Configure Runtime
+
+Optional environment variables:
+
+- `MODEL_DIR` (default: `outputs/mdeberta-kidshield`)
+- `HOST` (default: `0.0.0.0`)
+- `PORT` (default: `8000`)
+- `MAX_LENGTH` (default: `256`)
+- `MAX_BATCH_SIZE` (default: `32`)
+- `UNSAFE_THRESHOLD` (default: `0.5`)
+
+### Team integration and handoff
+
+Use this section when one person trains the model and another runs or embeds the HTTP API.
+
+**Single model, one decision.** Training merges toxicity / hate-related text (Jigsaw, HateXplain, etc.) and phishing URLs or domains (plus benign domains) into **one binary classifier**: `benign` vs `unsafe`. There is **not** a second model or separate HTTP route for “URL vs hate”; every input is a string passed through the same encoder. Optional `kind` in JSON (`text`, `url`, `domain`) is **metadata for clients only** and does not switch models.
+
+**Checkpoint location (`MODEL_DIR`).** After `scripts/train.py` finishes, `trainer.save_model()` and `tokenizer.save_pretrained()` write a directory that Hugging Face can reload. Point the API at that folder:
+
+- Default relative path: `outputs/mdeberta-kidshield` under the repo root.
+- Another machine or teammate checkout: set an **absolute** path, for example:
+
+```bash
+export MODEL_DIR="/absolute/path/to/trained-checkpoint"
+python scripts/serve_api.py
+```
+
+That directory should contain the usual Hugging Face artifacts (for example `config.json`, tokenizer files, and model weights). If the path is missing, `/predict` and `/info` return **503** until a valid `MODEL_DIR` exists.
+
+**Inference does not modify the checkpoint.** The API loads weights read-only, runs `model.eval()`, and uses `torch.no_grad()` for forward passes. It does **not** fine-tune or overwrite files under `MODEL_DIR`. Training remains a separate step (`scripts/train.py`).
+
+**Git and large files.** Trained weights and caches are **not** meant to be committed: `.gitignore` includes `outputs/` and `.cache/`. The handoff is usually “share the API code via git” and “share the checkpoint via drive, artifact store, or agreed folder,” then set `MODEL_DIR` accordingly.
+
+**Environment alignment.** For consistent behavior with training, use the same **Python version** and compatible **PyTorch / transformers** stack as documented in [Python Environment](#python-environment) (this project targets Python `3.11` for training).
+
+**Base URL for downstream services.** Other components should call:
+
+- `http://<HOST>:<PORT>` with `HOST`/`PORT` from the environment (defaults `0.0.0.0:8000`; for local-only clients on the same machine, you can set `HOST=127.0.0.1`).
+
+**Integration contract (minimal).**
+
+| Concern | Detail |
+| --- | --- |
+| Classify one string | `POST /predict` with body `{"text":"<string>"}` |
+| Classify many | `POST /predict` with body `{"items":[{"text":"..."}, ...]}` |
+| Labels | Response `label` is `"benign"` or `"unsafe"`; `scores` gives softmax probabilities for index order `benign` then `unsafe` |
+| Health | `GET /health` for process up; first `/predict` or `/info` triggers model load |
+
+**Example payloads by input type** (all use the same endpoint and model):
+
+Toxic or hateful **comment** (natural language):
+
+```json
+{
+  "text": "Example of targeted harassment or slurs goes here."
+}
+```
+
+**URL** string (phishing-style link as a single field):
+
+```json
+{
+  "text": "http://totally-legit-bank.example/verify-account"
+}
+```
+
+**Domain** only (no scheme):
+
+```json
+{
+  "text": "suspicious-phishing.example"
+}
+```
+
+Batch mixing types (optional `id` / `kind` for your app’s logging):
+
+```json
+{
+  "items": [
+    { "id": "c1", "kind": "text", "text": "Hostile message text here." },
+    { "id": "u1", "kind": "url", "text": "https://evil.example/login" },
+    { "id": "d1", "kind": "domain", "text": "benign-site.com" }
+  ]
+}
+```
+
+**Interactive API docs.** With the server running, open `http://localhost:8000/docs` (Swagger UI) or `http://localhost:8000/redoc` for the live schema and “try it” forms.
+
+### Endpoints
+
+- `GET /health`: service heartbeat and model-load status
+- `GET /info`: model metadata (name, labels, device)
+- `POST /predict`: classify one input or a batch
+
+### `POST /predict` Request Payload
+
+Use either a single `text` field:
+
+```json
+{
+  "text": "Free money!!! Click this link now"
+}
+```
+
+Or a batch `items` array:
+
+```json
+{
+  "items": [
+    {
+      "id": "msg-1",
+      "text": "You won a prize. Claim now.",
+      "kind": "text"
+    },
+    {
+      "id": "dom-2",
+      "text": "openai.com",
+      "kind": "domain"
+    }
+  ]
+}
+```
+
+Notes:
+
+- Provide only one of `text` or `items`
+- `kind` is optional (`text`, `url`, `domain`) and is a hint only
+
+### `POST /predict` Response Shape
+
+```json
+{
+  "model": {
+    "name": "microsoft/mdeberta-v3-base",
+    "dir": "outputs/mdeberta-kidshield"
+  },
+  "threshold": 0.5,
+  "latency_ms": 23,
+  "items": [
+    {
+      "id": "msg-1",
+      "kind": "text",
+      "text": "You won a prize. Claim now.",
+      "label": "unsafe",
+      "is_unsafe": true,
+      "scores": {
+        "benign": 0.08,
+        "unsafe": 0.92
+      }
+    }
+  ]
+}
+```
+
+### Quick `curl` Examples
+
+Health check:
+
+```bash
+curl -s http://localhost:8000/health
+```
+
+Single prediction:
+
+```bash
+curl -s -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"text":"This is a phishing message. Verify your account now."}'
+```
+
+Batch prediction:
+
+```bash
+curl -s -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"id":"1","text":"Click this suspicious link now","kind":"text"},
+      {"id":"2","text":"google.com","kind":"domain"}
+    ]
+  }'
+```
+
 ## Known Warnings
 
 These are expected:
