@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "KidShield AI",
+  "version": "1.0",
+  "description": "AI-powered content shield for kids.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "KidShield AI"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1/*"]
+}

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# Virtual environments
+.venv*/
+venv/
+env/
+
+# Model weights and outputs (too large for git)
+kidshieldai_textmodel/outputs/
+kidshield_backend/models/
+
+# Training data (raw datasets)
+kidshieldai_textmodel/data/raw/
+
+# HuggingFace cache
+kidshieldai_textmodel/.cache/
+
+# Node
+kidshield_chrome/node_modules/
+
+# Chrome extension build output
+kidshield_chrome/dist/
