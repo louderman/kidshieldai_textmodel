@@ -2,6 +2,8 @@ fastapi
 uvicorn[standard]
 pydantic-settings
 torch
+torchvision
 transformers
 sentencepiece
 protobuf
+Pillow

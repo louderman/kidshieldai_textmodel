@@ -53,12 +53,73 @@ def normalize(text: str) -> str:
     return _TOKEN.sub(_decode_token, text)
 
 
+_BLOCKLIST = {
+    "shit", "fuck", "fuk", "fck", "fucker", "fucking", "fucked",
+    "bitch", "bitches", "ass", "asshole", "bastard",
+    "dick", "cock", "pussy", "cunt",
+    "nigger", "nigga", "faggot", "fag",
+    "whore", "slut", "rape", "rapist",
+    "porn", "sex", "nude", "naked",
+    "kill", "murder", "suicide",
+}
+
+def _blocklist_hit(text: str) -> bool:
+    words = re.findall(r'[a-z]+', text.lower())
+    return any(w in _BLOCKLIST for w in words)
+
+
+_SUSPICIOUS_TLDS = {
+    ".ru", ".tk", ".gq", ".ml", ".cf", ".pw",
+    ".xyz", ".top", ".click", ".link", ".online",
+    ".site", ".club", ".info", ".biz",
+}
+
+_BRAND_NAMES = {
+    "paypal", "apple", "microsoft", "google", "amazon",
+    "netflix", "instagram", "facebook", "steam", "roblox",
+    "twitter", "tiktok", "snapchat", "discord", "spotify",
+    "bankofamerica", "chase", "wellsfargo", "ebay", "walmart",
+}
+
+_PHISHING_KEYWORDS = {
+    "verify", "secure", "login", "signin", "account", "update",
+    "confirm", "billing", "alert", "support", "claim", "free",
+    "gift", "suspended", "unusual", "activity", "recover", "unlock",
+    "validate", "authenticate", "password", "credential",
+}
+
+def _is_suspicious_domain(text: str) -> bool:
+    # only apply to inputs that look like hostnames (has dots, no spaces)
+    t = text.strip().lower()
+    if ' ' in t or '.' not in t:
+        return False
+
+    # strip port if present
+    t = t.split(':')[0]
+
+    has_suspicious_tld = any(t.endswith(tld) for tld in _SUSPICIOUS_TLDS)
+    parts = set(re.findall(r'[a-z]+', t))
+    has_brand = bool(parts & _BRAND_NAMES)
+    has_phishing_kw = bool(parts & _PHISHING_KEYWORDS)
+
+    # flag if: suspicious TLD, or brand and phishing keyword combo
+    return has_suspicious_tld or (has_brand and has_phishing_kw)
+
+
 def predict(text: str) -> dict:
     if _tokenizer is None or _model is None:
         raise RuntimeError("Model is not loaded.")
 
+    normalized = normalize(text)
+
+    if _blocklist_hit(normalized):
+        return {"label": "unsafe", "score": 1.0}
+
+    if _is_suspicious_domain(text):
+        return {"label": "unsafe", "score": 1.0}
+
     inputs = _tokenizer(
-        normalize(text),
+        normalized,
         return_tensors="pt",
         truncation=True,
         max_length=512,

@@ -10,5 +10,6 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
     model_path: str = str(BASE_DIR / "models" / "mdeberta-kidshield")
+    vit_model_path: str = str(BASE_DIR / "models" / "vit" / "kidshield_vit_scripted.pt")
 
 settings = Settings()
