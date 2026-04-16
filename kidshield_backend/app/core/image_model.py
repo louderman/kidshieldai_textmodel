@@ -57,6 +57,4 @@ def predict_image(image_b64: str) -> dict:
     label = "unsafe" if raw_label in _UNSAFE_CLASSES else "benign"
     score = float(probs[predicted_id])
 
-    logger.info("probs: %s", {_ID2LABEL[i]: round(float(probs[i]), 4) for i in range(len(probs))})
-
     return {"label": label, "score": round(score, 4)}
