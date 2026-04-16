@@ -19,8 +19,9 @@ _transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# class 0 = benign, class 1 = unsafe 
-_ID2LABEL = {0: "benign", 1: "unsafe"}
+# 4-class model output mapped to binary label
+_ID2LABEL = {0: "explicit", 1: "safe_nsfw", 2: "violent", 3: "safe_rwf"}
+_UNSAFE_CLASSES = {"explicit", "violent", "safe_nsfw"}
 
 
 def load_image_model(model_path: str) -> None:
@@ -52,7 +53,10 @@ def predict_image(image_b64: str) -> dict:
 
     probs = torch.softmax(logits, dim=-1).squeeze()
     predicted_id = int(torch.argmax(probs))
-    label = _ID2LABEL.get(predicted_id, "benign")
+    raw_label = _ID2LABEL.get(predicted_id, "safe_rwf")
+    label = "unsafe" if raw_label in _UNSAFE_CLASSES else "benign"
     score = float(probs[predicted_id])
+
+    logger.info("probs: %s", {_ID2LABEL[i]: round(float(probs[i]), 4) for i in range(len(probs))})
 
     return {"label": label, "score": round(score, 4)}
