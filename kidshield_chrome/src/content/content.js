@@ -172,8 +172,8 @@ async function classifyImage(img) {
       body: JSON.stringify({ image: imageB64 }),
     });
     if (!res.ok) return;
-    const { label, score } = await res.json();
-    if (label === 'unsafe' && score >= 0.85) {
+    const { label } = await res.json();
+    if (label === 'unsafe') {
       img.style.cssText = [
         'filter: blur(10px)',
         'cursor: pointer',

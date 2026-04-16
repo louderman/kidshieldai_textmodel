@@ -19,9 +19,9 @@ _transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-# 4-class model output mapped to binary label
-_ID2LABEL = {0: "explicit", 1: "safe_nsfw", 2: "violent", 3: "safe_rwf"}
-_UNSAFE_CLASSES = {"explicit", "violent", "safe_nsfw"}
+# 4-class model: explicit=0, safe_nsfw=1, violent=2, safe_rwf=3
+_EXPLICIT_THRESHOLD = 0.45
+_VIOLENT_THRESHOLD  = 0.55
 
 
 def load_image_model(model_path: str) -> None:
@@ -52,9 +52,16 @@ def predict_image(image_b64: str) -> dict:
         logits = _image_model(tensor)
 
     probs = torch.softmax(logits, dim=-1).squeeze()
-    predicted_id = int(torch.argmax(probs))
-    raw_label = _ID2LABEL.get(predicted_id, "safe_rwf")
-    label = "unsafe" if raw_label in _UNSAFE_CLASSES else "benign"
-    score = float(probs[predicted_id])
 
-    return {"label": label, "score": round(score, 4)}
+    explicit_prob = float(probs[0])
+    violent_prob  = float(probs[2])
+
+
+
+    if (explicit_prob >= _EXPLICIT_THRESHOLD or
+            violent_prob >= _VIOLENT_THRESHOLD):
+        predicted_id = int(torch.argmax(probs))
+        score = float(probs[predicted_id])
+        return {"label": "unsafe", "score": round(score, 4)}
+
+    return {"label": "benign", "score": round(float(probs[3]), 4)}
