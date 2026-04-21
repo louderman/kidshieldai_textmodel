@@ -52,7 +52,7 @@ function collectTextNodes(root) {
       if (!el) return NodeFilter.FILTER_REJECT;
       if (el.hasAttribute(PROCESSED)) return NodeFilter.FILTER_REJECT;
       const tag = el.tagName;
-      if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT'].includes(tag)) {
+      if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA', 'INPUT', 'A'].includes(tag)) {
         return NodeFilter.FILTER_REJECT;
       }
       if (node.textContent.trim().length < 2) return NodeFilter.FILTER_SKIP;
