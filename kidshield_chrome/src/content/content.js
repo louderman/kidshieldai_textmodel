@@ -1,5 +1,3 @@
-const API_URL = 'http://127.0.0.1:8000/classify';
-const IMAGE_API_URL = 'http://127.0.0.1:8000/classify-image';
 const PROCESSED = 'data-kidshield-processed';
 const LINK_PROCESSED = 'data-kidshield-link-processed';
 const IMG_PROCESSED = 'data-kidshield-img-processed';
@@ -29,19 +27,13 @@ async function classifyNode(textNode) {
   if (!text || text.length < 2) return;
 
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) return;
-    const { label } = await res.json();
+    const { label } = await chrome.runtime.sendMessage({ type: 'classify', text });
     if (label === 'unsafe') {
       const span = makeBlurSpan(textNode.textContent);
       textNode.parentNode.replaceChild(span, textNode);
     }
   } catch {
-    // backend unavailable — fail silently
+    // background unavailable — fail silently
   }
 }
 
@@ -107,19 +99,13 @@ async function classifyLink(anchor) {
   }
 
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: hostname }),
-    });
-    if (!res.ok) return;
-    const { label } = await res.json();
+    const { label } = await chrome.runtime.sendMessage({ type: 'classify', text: hostname });
     if (label === 'unsafe') {
       anchor.style.cssText = 'color: #ff4444; text-decoration: line-through;';
       anchor.after(makeDangerBadge());
     }
   } catch {
-    // backend unavailable — fail silently
+    // background unavailable — fail silently
   }
 }
 
@@ -166,13 +152,7 @@ async function classifyImage(img) {
   }
 
   try {
-    const res = await fetch(IMAGE_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageB64 }),
-    });
-    if (!res.ok) return;
-    const { label } = await res.json();
+    const { label } = await chrome.runtime.sendMessage({ type: 'classify-image', image: imageB64 });
     if (label === 'unsafe') {
       img.style.cssText = [
         'filter: blur(10px)',
@@ -204,22 +184,42 @@ function scanImages(root) {
   });
 }
 
-// first scan
-scan(document.body);
-scanLinks(document.body);
-scanImages(document.body);
+function collectShadowRoots(root) {
+  const roots = [];
+  const els = root.querySelectorAll ? root.querySelectorAll('*') : [];
+  for (const el of els) {
+    if (el.shadowRoot) {
+      roots.push(el.shadowRoot);
+      roots.push(...collectShadowRoots(el.shadowRoot));
+    }
+  }
+  return roots;
+}
 
-// watch for dynamically added content(infinite scroll type of content)
+// watch for dynamically added content (infinite scroll, React hydration, shadow roots)
 const observer = new MutationObserver((mutations) => {
   for (const mutation of mutations) {
     for (const added of mutation.addedNodes) {
       if (added.nodeType === Node.ELEMENT_NODE && !added.hasAttribute(PROCESSED)) {
-        scan(added);
-        scanLinks(added);
-        scanImages(added);
+        fullScan(added);
       }
     }
   }
 });
 
+function fullScan(root) {
+  scan(root);
+  scanLinks(root);
+  scanImages(root);
+  for (const sr of collectShadowRoots(root)) {
+    scan(sr);
+    scanLinks(sr);
+    scanImages(sr);
+    observer.observe(sr, { childList: true, subtree: true });
+  }
+}
+
 observer.observe(document.body, { childList: true, subtree: true });
+
+// first scan
+fullScan(document.body);
