@@ -66,6 +66,12 @@ The backend requires two model files that are **not included in the repository**
 
 ### Text model (DeBERTa)
 
+The text model is stored in the **`main`** branch of this repository. If you cloned the `all` branch, switch to `main` and copy the model files out, or download the `main` branch separately:
+
+```powershell
+git clone --branch main <this-repo-url>
+```
+
 Place the full model directory at:
 
 ```
@@ -86,7 +92,13 @@ mdeberta-kidshield/
 
 ### Image model (Vision Transformer)
 
-Place the scripted PyTorch model file at:
+The image model lives in a separate repository. Clone its **`main`** branch:
+
+```powershell
+git clone --branch main https://github.com/Meherbob2285-dot/Kidshield-Visual-Model
+```
+
+Then place the scripted model file at:
 
 ```
 kidshield_backend/models/vit/kidshield_vit_scripted.pt    ← ~344 MB
